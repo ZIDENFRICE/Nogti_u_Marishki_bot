@@ -1,0 +1,470 @@
+import os
+from datetime import datetime, timedelta
+
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import selectinload
+
+from config import DB_URL, MSK, now, today
+from database.models import Base, Booking, Broadcast, Review, Service, Slot, User
+
+os.makedirs("data", exist_ok=True)
+
+engine = create_async_engine(DB_URL, echo=False)
+async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+
+
+async def init_db():
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+
+# ================= USERS =================
+async def get_or_create_user(tg_id: int, username: str | None, full_name: str | None) -> User:
+    async with async_session() as s:
+        user = await s.get(User, tg_id)
+        if not user:
+            user = User(id=tg_id, username=username, full_name=full_name)
+            s.add(user)
+            await s.commit()
+        else:
+            if username and user.username != username:
+                user.username = username
+            if full_name and user.full_name != full_name:
+                user.full_name = full_name
+            await s.commit()
+        return user
+
+
+async def get_all_users() -> list[User]:
+    async with async_session() as s:
+        res = await s.execute(select(User).order_by(User.created_at.desc()))
+        return list(res.scalars().all())
+
+
+async def get_user(tg_id: int) -> User | None:
+    async with async_session() as s:
+        return await s.get(User, tg_id)
+
+
+async def count_users() -> int:
+    async with async_session() as s:
+        res = await s.execute(select(func.count(User.id)))
+        return res.scalar_one()
+
+
+# ================= SERVICES =================
+async def get_active_services() -> list[Service]:
+    async with async_session() as s:
+        res = await s.execute(
+            select(Service).where(Service.is_active.is_(True)).order_by(Service.id)
+        )
+        return list(res.scalars().all())
+
+
+async def get_all_services() -> list[Service]:
+    async with async_session() as s:
+        res = await s.execute(select(Service).order_by(Service.id))
+        return list(res.scalars().all())
+
+
+async def get_service(service_id: int) -> Service | None:
+    async with async_session() as s:
+        return await s.get(Service, service_id)
+
+
+async def add_service(title: str, price: int, duration_min: int,
+                      description: str | None = None) -> Service:
+    async with async_session() as s:
+        svc = Service(title=title, price=price, duration_min=duration_min, description=description)
+        s.add(svc)
+        await s.commit()
+        await s.refresh(svc)
+        return svc
+
+
+async def delete_service(service_id: int) -> bool:
+    async with async_session() as s:
+        svc = await s.get(Service, service_id)
+        if not svc:
+            return False
+        await s.delete(svc)
+        await s.commit()
+        return True
+
+
+# ================= SLOTS =================
+async def get_free_slots() -> list[Slot]:
+    async with async_session() as s:
+        res = await s.execute(
+            select(Slot)
+            .where(Slot.is_booked.is_(False), Slot.dt >= now())
+            .order_by(Slot.dt)
+        )
+        return list(res.scalars().all())
+
+
+async def get_all_future_slots() -> list[Slot]:
+    async with async_session() as s:
+        res = await s.execute(
+            select(Slot).where(Slot.dt >= now()).order_by(Slot.dt)
+        )
+        return list(res.scalars().all())
+
+
+async def get_slot(slot_id: int) -> Slot | None:
+    async with async_session() as s:
+        return await s.get(Slot, slot_id)
+
+
+async def add_slot(dt: datetime) -> Slot:
+    async with async_session() as s:
+        slot = Slot(dt=dt)
+        s.add(slot)
+        await s.commit()
+        await s.refresh(slot)
+        return slot
+
+
+async def add_slots_bulk(dts: list[datetime]) -> int:
+    async with async_session() as s:
+        for dt in dts:
+            s.add(Slot(dt=dt))
+        await s.commit()
+        return len(dts)
+
+
+async def delete_slot(slot_id: int, force: bool = False) -> dict:
+    async with async_session() as s:
+        slot = await s.get(Slot, slot_id)
+        if not slot:
+            return {"deleted": False, "had_booking": False,
+                    "booking_id": None, "user_id": None, "dt": None}
+
+        result = {
+            "deleted": False,
+            "had_booking": slot.is_booked,
+            "booking_id": None,
+            "user_id": None,
+            "dt": slot.dt,
+        }
+
+        if slot.is_booked:
+            if not force:
+                return result
+
+            res = await s.execute(
+                select(Booking).where(
+                    Booking.slot_id == slot_id,
+                    Booking.status == "active",
+                )
+            )
+            booking = res.scalar_one_or_none()
+            if booking:
+                result["booking_id"] = booking.id
+                result["user_id"] = booking.user_id
+                booking.status = "cancelled"
+
+        await s.delete(slot)
+        await s.commit()
+        result["deleted"] = True
+        return result
+
+
+# ================= BOOKINGS =================
+async def create_booking(user_id: int, service_id: int, slot_id: int,
+                         client_name: str, client_phone: str,
+                         note: str | None = None) -> Booking | None:
+    async with async_session() as s:
+        # 1. Проверяем, что слот существует и свободен
+        slot = await s.get(Slot, slot_id)
+        if not slot or slot.is_booked:
+            return None
+
+        # 2. Дополнительно проверяем: нет ли УЖЕ активной брони на этот слот
+        res_existing = await s.execute(
+            select(Booking).where(
+                Booking.slot_id == slot_id,
+                Booking.status == "active",
+            )
+        )
+        existing = res_existing.scalar_one_or_none()
+        if existing:
+            return None
+
+        # 3. Создаём бронь
+        slot.is_booked = True
+        booking = Booking(
+            user_id=user_id,
+            service_id=service_id,
+            slot_id=slot_id,
+            client_name=client_name,
+            client_phone=client_phone,
+            note=note,
+        )
+        s.add(booking)
+        await s.commit()
+
+        # 4. Возвращаем с подгруженными связями
+        res = await s.execute(
+            select(Booking)
+            .options(selectinload(Booking.service), selectinload(Booking.slot))
+            .where(Booking.id == booking.id)
+        )
+        return res.scalar_one()
+
+# ================= BOOKINGS (с ПОДГРУЗКОЙ СВЯЗЕЙ) =================
+async def get_user_bookings(user_id: int, status: str = "active") -> list[Booking]:
+    async with async_session() as s:
+        res = await s.execute(
+            select(Booking)
+            .options(selectinload(Booking.service), selectinload(Booking.slot))
+            .where(Booking.user_id == user_id, Booking.status == status)
+            .order_by(Booking.id.desc())
+        )
+        return list(res.scalars().all())
+
+
+async def get_user_history(user_id: int) -> list[Booking]:
+    async with async_session() as s:
+        res = await s.execute(
+            select(Booking)
+            .options(selectinload(Booking.service), selectinload(Booking.slot))
+            .where(Booking.user_id == user_id)
+            .order_by(Booking.id.desc())
+        )
+        return list(res.scalars().all())
+
+
+async def get_active_bookings() -> list[Booking]:
+    async with async_session() as s:
+        res = await s.execute(
+            select(Booking)
+            .options(
+                selectinload(Booking.service),
+                selectinload(Booking.slot),
+                selectinload(Booking.user),
+            )
+            .where(Booking.status == "active")
+            .order_by(Booking.slot_id)
+        )
+        return list(res.scalars().all())
+
+
+async def get_bookings_today() -> list[Booking]:
+    today_date = today()   # ← переименовали переменную
+    start = datetime.combine(today_date, datetime.min.time()).replace(tzinfo=MSK)
+    end = start + timedelta(days=1)
+    async with async_session() as s:
+        res = await s.execute(
+            select(Booking)
+            .options(
+                selectinload(Booking.service),
+                selectinload(Booking.slot),
+                selectinload(Booking.user),
+            )
+            .join(Slot, Slot.id == Booking.slot_id)
+            .where(Booking.status == "active", Slot.dt >= start, Slot.dt < end)
+            .order_by(Slot.dt)
+        )
+        return list(res.scalars().all())
+
+
+async def get_bookings_tomorrow() -> list[Booking]:
+    tomorrow_date = today() + timedelta(days=1)   # ← переименовали
+    start = datetime.combine(tomorrow_date, datetime.min.time()).replace(tzinfo=MSK)
+    end = start + timedelta(days=1)
+    async with async_session() as s:
+        res = await s.execute(
+            select(Booking)
+            .options(
+                selectinload(Booking.service),
+                selectinload(Booking.slot),
+                selectinload(Booking.user),
+            )
+            .join(Slot, Slot.id == Booking.slot_id)
+            .where(Booking.status == "active", Slot.dt >= start, Slot.dt < end)
+            .order_by(Slot.dt)
+        )
+        return list(res.scalars().all())
+
+
+async def get_bookings_by_period(start: datetime, end: datetime) -> list[Booking]:
+    async with async_session() as s:
+        res = await s.execute(
+            select(Booking)
+            .join(Slot, Slot.id == Booking.slot_id)
+            .where(
+                Booking.status == "active",
+                Slot.dt >= start,
+                Slot.dt < end,
+            )
+            .order_by(Slot.dt)
+        )
+        return list(res.scalars().all())
+
+
+async def get_booking(booking_id: int) -> Booking | None:
+    async with async_session() as s:
+        res = await s.execute(
+            select(Booking)
+            .options(
+                selectinload(Booking.service),
+                selectinload(Booking.slot),
+                selectinload(Booking.user),
+            )
+            .where(Booking.id == booking_id)
+        )
+        return res.scalar_one_or_none()
+
+
+async def cancel_booking(booking_id: int) -> Booking | None:
+    async with async_session() as s:
+        booking = await s.get(Booking, booking_id)
+        if not booking or booking.status != "active":
+            return None
+
+        booking.status = "cancelled"
+        # НЕ обнуляем slot_id, просто освобождаем слот
+        if booking.slot_id:
+            slot = await s.get(Slot, booking.slot_id)
+            if slot:
+                slot.is_booked = False
+
+        await s.commit()
+
+        # перезагружаем со связями
+        res = await s.execute(
+            select(Booking)
+            .options(selectinload(Booking.service), selectinload(Booking.slot))
+            .where(Booking.id == booking_id)
+        )
+        return res.scalar_one()
+
+
+async def mark_booking_done(booking_id: int) -> bool:
+    async with async_session() as s:
+        booking = await s.get(Booking, booking_id)
+        if not booking:
+            return False
+        booking.status = "done"
+        await s.commit()
+        return True
+
+
+# ================= STATS =================
+async def get_stats() -> dict:
+    async with async_session() as s:
+        # всего клиентов
+        total_users = (await s.execute(select(func.count(User.id)))).scalar_one()
+        # активных записей
+        active_bookings = (
+            await s.execute(select(func.count(Booking.id)).where(Booking.status == "active"))
+        ).scalar_one()
+        # выполнено
+        done_bookings = (
+            await s.execute(select(func.count(Booking.id)).where(Booking.status == "done"))
+        ).scalar_one()
+        # отменено
+        cancelled = (
+            await s.execute(select(func.count(Booking.id)).where(Booking.status == "cancelled"))
+        ).scalar_one()
+        # выручка (по done + active)
+        revenue = (
+            await s.execute(
+                select(func.coalesce(func.sum(Service.price), 0))
+                .join(Booking, Booking.service_id == Service.id)
+                .where(Booking.status.in_(["done", "active"]))
+            )
+        ).scalar_one()
+        # свободных слотов в будущем
+        free_slots = (
+            await s.execute(
+                select(func.count(Slot.id)).where(Slot.is_booked.is_(False), Slot.dt >= now())
+            )
+        ).scalar_one()
+        # средний рейтинг
+        avg_rating = (
+            await s.execute(select(func.avg(Review.rating)))
+        ).scalar()
+
+    return {
+        "total_users": total_users,
+        "active_bookings": active_bookings,
+        "done_bookings": done_bookings,
+        "cancelled": cancelled,
+        "revenue": int(revenue or 0),
+        "free_slots": free_slots,
+        "avg_rating": round(avg_rating, 2) if avg_rating else 0,
+    }
+
+
+async def get_revenue_by_month(year: int, month: int) -> int:
+    start = datetime(year, month, 1, tzinfo=MSK)
+    if month == 12:
+        end = datetime(year + 1, 1, 1, tzinfo=MSK)
+    else:
+        end = datetime(year, month + 1, 1, tzinfo=MSK)
+    async with async_session() as s:
+        res = await s.execute(
+            select(func.coalesce(func.sum(Service.price), 0))
+            .join(Booking, Booking.service_id == Service.id)
+            .join(Slot, Slot.id == Booking.slot_id)
+            .where(
+                Booking.status.in_(["done", "active"]),
+                Slot.dt >= start,
+                Slot.dt < end,
+            )
+        )
+        return int(res.scalar_one() or 0)
+
+
+# ================= BROADCASTS =================
+async def save_broadcast(text: str | None, photo_id: str | None,
+                         sent: int, failed: int) -> Broadcast:
+    async with async_session() as s:
+        b = Broadcast(text=text, photo_id=photo_id, sent_count=sent, failed_count=failed)
+        s.add(b)
+        await s.commit()
+        await s.refresh(b)
+        return b
+
+
+# ================= REVIEWS =================
+async def add_review(user_id: int, rating: int, text: str | None,
+                     booking_id: int | None = None,
+                     photo_id: str | None = None) -> Review:
+    async with async_session() as s:
+        r = Review(
+            user_id=user_id,
+            rating=rating,
+            text=text,
+            booking_id=booking_id,
+            photo_id=photo_id,
+        )
+        s.add(r)
+        await s.commit()
+        await s.refresh(r)
+        return r
+
+
+async def get_all_reviews(limit: int = 20) -> list[Review]:
+    async with async_session() as s:
+        res = await s.execute(
+            select(Review)
+            .options(selectinload(Review.user))   # ← важно!
+            .order_by(Review.created_at.desc())
+            .limit(limit)
+        )
+        return list(res.scalars().all())
+
+
+async def get_review_by_id(review_id: int) -> Review | None:
+    async with async_session() as s:
+        res = await s.execute(
+            select(Review)
+            .options(selectinload(Review.user))   # ← важно!
+            .where(Review.id == review_id)
+        )
+        return res.scalar_one_or_none()

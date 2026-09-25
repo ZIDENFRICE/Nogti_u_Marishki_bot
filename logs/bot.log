@@ -1,0 +1,22 @@
+2026-09-25 13:01:15,515 | INFO | apscheduler.scheduler | Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-09-25 13:01:15,518 | INFO | apscheduler.scheduler | Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-09-25 13:01:15,519 | INFO | apscheduler.scheduler | Added job "check_client_reminders" to job store "default"
+2026-09-25 13:01:15,520 | INFO | apscheduler.scheduler | Added job "remind_admin_morning" to job store "default"
+2026-09-25 13:01:15,520 | INFO | apscheduler.scheduler | Scheduler started
+2026-09-25 13:01:15,520 | INFO | aiogram.dispatcher | Start polling
+2026-09-25 13:01:15,811 | INFO | aiogram.dispatcher | Run polling for bot @Nogti_u_Marishki_bot id=8822792585 - 'Ногти у Маришки'
+2026-09-25 13:04:18,004 | INFO | aiogram.dispatcher | Polling stopped
+2026-09-25 13:04:18,005 | ERROR | aiogram.dispatcher | Failed to fetch updates - TelegramNetworkError: HTTP Client says - ServerDisconnectedError: Server disconnected
+2026-09-25 13:04:18,005 | WARNING | aiogram.dispatcher | Sleep for 1.000000 seconds and try again... (tryings = 0, bot id = 8822792585)
+2026-09-25 13:04:18,266 | INFO | aiogram.dispatcher | Polling stopped for bot @Nogti_u_Marishki_bot id=8822792585 - 'Ногти у Маришки'
+2026-09-25 14:37:15,711 | INFO | apscheduler.scheduler | Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-09-25 14:37:15,714 | INFO | apscheduler.scheduler | Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-09-25 14:37:15,715 | INFO | apscheduler.scheduler | Added job "check_client_reminders" to job store "default"
+2026-09-25 14:37:15,715 | INFO | apscheduler.scheduler | Added job "remind_admin_morning" to job store "default"
+2026-09-25 14:37:15,715 | INFO | apscheduler.scheduler | Scheduler started
+2026-09-25 14:37:15,716 | INFO | aiogram.dispatcher | Start polling
+2026-09-25 14:37:16,351 | INFO | aiogram.dispatcher | Run polling for bot @Nogti_u_Marishki_bot id=8822792585 - 'Ногти у Маришки'
+2026-09-25 14:38:04,386 | INFO | aiogram.dispatcher | Polling stopped
+2026-09-25 14:38:04,388 | ERROR | aiogram.dispatcher | Failed to fetch updates - TelegramNetworkError: HTTP Client says - ServerDisconnectedError: Server disconnected
+2026-09-25 14:38:04,388 | WARNING | aiogram.dispatcher | Sleep for 1.000000 seconds and try again... (tryings = 0, bot id = 8822792585)
+2026-09-25 14:38:04,654 | INFO | aiogram.dispatcher | Polling stopped for bot @Nogti_u_Marishki_bot id=8822792585 - 'Ногти у Маришки'
