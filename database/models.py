@@ -58,6 +58,7 @@ class Booking(Base):
     client_name: Mapped[str] = mapped_column(String(128))
     client_phone: Mapped[str] = mapped_column(String(32))
     note: Mapped[str | None] = mapped_column(Text, nullable=True)  # пожелания клиента
+    photo_id: Mapped[str | None] = mapped_column(String(256), nullable=True) 
     status: Mapped[str] = mapped_column(String(16), default="active")  # active/cancelled/done
     reminder_sent: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -83,7 +84,7 @@ class Review(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    booking_id: Mapped[int | None] = mapped_column(ForeignKey("bookings.id"), nullable=True)
+    booking_id: Mapped[int | None] = mapped_column(ForeignKey("bookings.id"), nullable=True)  # 👈 важно
     rating: Mapped[int] = mapped_column(Integer)
     text: Mapped[str | None] = mapped_column(Text, nullable=True)
     photo_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
@@ -91,3 +92,11 @@ class Review(Base):
 
     # 👇 ВОТ ЭТУ СТРОКУ ДОБАВЬ (связь с User)
     user: Mapped["User"] = relationship()
+
+class PortfolioPhoto(Base):
+    __tablename__ = "portfolio_photos"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    photo_id: Mapped[str] = mapped_column(String(256))
+    caption: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

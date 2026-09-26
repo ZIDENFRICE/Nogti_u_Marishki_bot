@@ -7,6 +7,7 @@ class BookingSG(StatesGroup):
     entering_name = State()
     entering_phone = State()
     entering_note = State()      # новое: пожелания
+    entering_photo = State()
     confirming = State()
 
 
@@ -26,9 +27,11 @@ class AdminSG(StatesGroup):
 
     # поиск клиента
     search_client = State()
+    add_portfolio = State()      # 👈 НОВОЕ
 
 
 class ReviewSG(StatesGroup):
+    choosing_booking = State()
     rating = State()
     text = State()
     photo = State()      # ← НОВОЕ

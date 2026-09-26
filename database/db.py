@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.orm import selectinload
 
 from config import DB_URL, MSK, now, today
-from database.models import Base, Booking, Broadcast, Review, Service, Slot, User
+from database.models import Base, Booking, Broadcast, Review, Service, Slot, User, PortfolioPhoto
 
 os.makedirs("data", exist_ok=True)
 
@@ -84,14 +84,25 @@ async def add_service(title: str, price: int, duration_min: int,
         return svc
 
 
-async def delete_service(service_id: int) -> bool:
+async def delete_service(service_id: int) -> tuple[bool, str]:
+    """Удалить услугу. Нельзя, если есть активные записи."""
     async with async_session() as s:
         svc = await s.get(Service, service_id)
         if not svc:
-            return False
+            return False, "Услуга не найдена"
+
+        res = await s.execute(
+            select(Booking).where(
+                Booking.service_id == service_id,
+                Booking.status == "active",
+            )
+        )
+        if res.scalar_one_or_none():
+            return False, "На эту услугу есть активные записи. Сначала отмени их."
+
         await s.delete(svc)
         await s.commit()
-        return True
+        return True, "Услуга удалена"
 
 
 # ================= SLOTS =================
@@ -175,25 +186,22 @@ async def delete_slot(slot_id: int, force: bool = False) -> dict:
 # ================= BOOKINGS =================
 async def create_booking(user_id: int, service_id: int, slot_id: int,
                          client_name: str, client_phone: str,
-                         note: str | None = None) -> Booking | None:
+                         note: str | None = None,
+                         photo_id: str | None = None) -> Booking | None:
     async with async_session() as s:
-        # 1. Проверяем, что слот существует и свободен
         slot = await s.get(Slot, slot_id)
         if not slot or slot.is_booked:
             return None
 
-        # 2. Дополнительно проверяем: нет ли УЖЕ активной брони на этот слот
-        res_existing = await s.execute(
+        res = await s.execute(
             select(Booking).where(
                 Booking.slot_id == slot_id,
                 Booking.status == "active",
             )
         )
-        existing = res_existing.scalar_one_or_none()
-        if existing:
+        if res.scalar_one_or_none():
             return None
 
-        # 3. Создаём бронь
         slot.is_booked = True
         booking = Booking(
             user_id=user_id,
@@ -202,17 +210,17 @@ async def create_booking(user_id: int, service_id: int, slot_id: int,
             client_name=client_name,
             client_phone=client_phone,
             note=note,
+            photo_id=photo_id,
         )
         s.add(booking)
         await s.commit()
 
-        # 4. Возвращаем с подгруженными связями
-        res = await s.execute(
+        res2 = await s.execute(
             select(Booking)
             .options(selectinload(Booking.service), selectinload(Booking.slot))
             .where(Booking.id == booking.id)
         )
-        return res.scalar_one()
+        return res2.scalar_one()
 
 # ================= BOOKINGS (с ПОДГРУЗКОЙ СВЯЗЕЙ) =================
 async def get_user_bookings(user_id: int, status: str = "active") -> list[Booking]:
@@ -468,3 +476,84 @@ async def get_review_by_id(review_id: int) -> Review | None:
             .where(Review.id == review_id)
         )
         return res.scalar_one_or_none()
+# ================= REVIEWS (защита от накрутки) =================
+
+async def get_done_bookings_for_review(user_id: int) -> list[Booking]:
+    """Завершённые (done) записи клиента, по которым ещё нет отзыва."""
+    async with async_session() as s:
+        subq = select(Review.booking_id).where(
+            Review.user_id == user_id,
+            Review.booking_id.is_not(None),
+        )
+        res = await s.execute(
+            select(Booking)
+            .options(selectinload(Booking.service), selectinload(Booking.slot))
+            .where(
+                Booking.user_id == user_id,
+                Booking.status == "done",
+                Booking.id.not_in(subq),
+            )
+            .order_by(Booking.slot_id.desc())
+        )
+        return list(res.scalars().all())
+
+
+async def can_leave_review(user_id: int, booking_id: int) -> tuple[bool, str]:
+    async with async_session() as s:
+        booking = await s.get(Booking, booking_id)
+        if not booking:
+            return False, "Запись не найдена"
+        if booking.user_id != user_id:
+            return False, "Это не твоя запись"
+        if booking.status != "done":
+            return False, "Отзыв можно оставить только после визита"
+
+        res = await s.execute(
+            select(Review).where(
+                Review.user_id == user_id,
+                Review.booking_id == booking_id,
+            )
+        )
+        if res.scalar_one_or_none():
+            return False, "Ты уже оставила отзыв по этой записи"
+
+        return True, "Можно"
+
+    # ================= PORTFOLIO =================
+
+async def add_portfolio_photo(photo_id: str, caption: str | None = None) -> PortfolioPhoto:
+    async with async_session() as s:
+        p = PortfolioPhoto(photo_id=photo_id, caption=caption)
+        s.add(p)
+        await s.commit()
+        await s.refresh(p)
+        return p
+
+
+async def get_all_portfolio() -> list[PortfolioPhoto]:
+    async with async_session() as s:
+        res = await s.execute(
+            select(PortfolioPhoto).order_by(PortfolioPhoto.id.desc())
+        )
+        return list(res.scalars().all())
+
+
+async def get_portfolio_photo(photo_id: int) -> PortfolioPhoto | None:
+    async with async_session() as s:
+        return await s.get(PortfolioPhoto, photo_id)
+
+
+async def delete_portfolio_photo(photo_id: int) -> bool:
+    async with async_session() as s:
+        p = await s.get(PortfolioPhoto, photo_id)
+        if not p:
+            return False
+        await s.delete(p)
+        await s.commit()
+        return True
+
+
+async def count_portfolio() -> int:
+    async with async_session() as s:
+        res = await s.execute(select(func.count(PortfolioPhoto.id)))
+        return res.scalar_one()

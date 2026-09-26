@@ -31,6 +31,7 @@ async def pag_switch(call: CallbackQuery):
         "bookings_adm": "handlers.admin:render_bookings_adm",
         "clients_adm": "handlers.admin:render_clients_adm",
         "slots_adm": "handlers.admin:render_slots_adm",
+        "portfolio_user": "handlers.user:render_portfolio_user",
     }
 
     path = RENDERERS.get(key)

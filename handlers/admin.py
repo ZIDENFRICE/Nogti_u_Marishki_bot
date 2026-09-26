@@ -28,15 +28,15 @@ from database.db import (
     get_user_history,
     mark_booking_done,
     save_broadcast,
+    add_portfolio_photo, get_all_portfolio,
+    get_portfolio_photo, delete_portfolio_photo, count_portfolio,
 )
 from filters.is_admin import IsAdmin
 from keyboards.admin_kb import (
-    admin_booking_detail_kb,
-    admin_bookings_kb,
-    admin_menu_kb,
-    back_admin_kb,
-    broadcast_confirm_kb,
-    slot_detail_kb,
+    admin_menu_kb, admin_services_kb, admin_slots_kb, slot_detail_kb,
+    admin_bookings_kb, admin_booking_detail_kb, back_admin_kb,
+    broadcast_confirm_kb, bulk_slots_confirm_kb,
+    admin_portfolio_kb, admin_portfolio_list_kb,     # 👈 новые
 )
 from keyboards.user_kb import cancel_kb
 from states.states import AdminSG
@@ -182,30 +182,34 @@ async def render_bookings_adm(call: CallbackQuery):
 async def adm_booking_detail(call: CallbackQuery):
     booking_id = int(call.data.split(":")[1])
     b = await get_booking(booking_id)
-    if b.slot:
-        dt_line = f"🗓 {fmt_date(b.slot.dt)} в {b.slot.dt.strftime('%H:%M')}\n"
-    else:
-        dt_line = "🗓 — (слот удалён)\n"
+    if not b:
+        await call.answer("Запись не найдена", show_alert=True)
+        return
 
     text = (
-        f"📌 <b>Запись #{b.id}</b>\n"
-        f"{DIVIDER}\n"
+        f"📌 <b>Запись #{b.id}</b>\n{DIVIDER}\n"
         f"💅 <b>{b.service.title}</b>\n"
-        f"{dt_line}"
+        f"🗓 {fmt_date(b.slot.dt)} в {b.slot.dt.strftime('%H:%M')}\n"
         f"💰 {money(b.service.price)} • ⏱ {b.service.duration_min} мин\n"
         f"👤 {b.client_name}\n"
         f"📞 <code>{b.client_phone}</code>\n"
     )
     if b.note:
         text += f"📝 <i>{b.note}</i>\n"
-    if b.user:
-        uname = f"@{b.user.username}" if b.user.username else f"id{b.user_id}"
-        text += f"🔗 {uname}\n"
     text += f"📌 Статус: <b>{b.status}</b>"
-    await call.message.edit_text(
-        text,
-        reply_markup=admin_booking_detail_kb(b.id),
-    )
+
+    if b.photo_id:
+        try:
+            await call.message.delete()
+        except Exception:
+            pass
+        await call.message.answer_photo(
+            b.photo_id,
+            caption=text,
+            reply_markup=admin_booking_detail_kb(b.id),
+        )
+    else:
+        await call.message.edit_text(text, reply_markup=admin_booking_detail_kb(b.id))
 
 
 @router.callback_query(F.data.startswith("adm_booking_done:"))
@@ -213,21 +217,30 @@ async def adm_booking_done(call: CallbackQuery):
     booking_id = int(call.data.split(":")[1])
     b = await get_booking(booking_id)
     ok = await mark_booking_done(booking_id)
-    if ok and b:
-        await call.answer("Отмечено как выполнено ✅")
-        # уведомим клиента
-        try:
-            await call.bot.send_message(
-                b.user_id,
-                f"✅ <b>Спасибо за визит!</b>\n"
-                f"{DIVIDER}\n"
-                f"Было приятно поработать 💖\n"
-                f"Буду рада отзыву — /start → ⭐ Отзывы",
-            )
-        except Exception:
-            pass
-    else:
+
+    if not ok or not b:
         await call.answer("Не удалось", show_alert=True)
+        return
+
+    await call.answer("Отмечено как выполнено ✅")
+
+    try:
+        from aiogram.utils.keyboard import InlineKeyboardBuilder
+        kb = InlineKeyboardBuilder()
+        kb.button(text="⭐ Оставить отзыв", callback_data=f"review:{b.id}")
+
+        await call.bot.send_message(
+            b.user_id,
+            f"✅ <b>Спасибо за визит!</b>\n{DIVIDER}\n"
+            f"💅 {b.service.title}\n"
+            f"🗓 {b.slot.dt.strftime('%d.%m.%Y %H:%M')}\n\n"
+            f"Было приятно поработать 💖\n"
+            f"Буду рада отзыву!",
+            reply_markup=kb.as_markup(),
+        )
+    except Exception as e:
+        print(f"[DONE NOTIFY FAIL] {b.user_id}: {e}")
+
     await adm_bookings(call)
 
 
@@ -378,9 +391,11 @@ async def adm_service_duration(message: Message, state: FSMContext):
 @router.callback_query(F.data.startswith("adm_service_del:"))
 async def adm_service_del(call: CallbackQuery):
     service_id = int(call.data.split(":")[1])
-    svc = await get_service(service_id)
-    await delete_service(service_id)
-    await call.answer(f"Удалено: {svc.title if svc else '—'}")
+    ok, msg = await delete_service(service_id)
+    if not ok:
+        await call.answer(msg, show_alert=True)
+        return
+    await call.answer("✅ Услуга удалена")
     await adm_services(call)
 
 
@@ -797,3 +812,79 @@ async def adm_broadcast_send(call: CallbackQuery, state: FSMContext):
 
     await status_msg.edit_text(report, reply_markup=admin_menu_kb())
 
+# ================= PORTFOLIO =================
+@router.callback_query(F.data == "adm_portfolio")
+async def adm_portfolio(call: CallbackQuery, state: FSMContext):
+    await state.clear()
+    count = await count_portfolio()
+    text = (
+        f"📸 <b>Примеры работ</b>\n{DIVIDER}\n"
+        f"Всего фото: <b>{count}</b>\n\n"
+        "Эти фото видят клиенты в разделе «📸 Примеры работ»."
+    )
+    await call.message.edit_text(text, reply_markup=admin_portfolio_kb(count))
+
+
+@router.callback_query(F.data == "adm_portfolio_add")
+async def adm_portfolio_add(call: CallbackQuery, state: FSMContext):
+    await state.set_state(AdminSG.add_portfolio)
+    await call.message.edit_text(
+        f"📸 <b>Добавление фото</b>\n{DIVIDER}\n"
+        "Отправь <b>фото</b> работы.\n"
+        "Можно с подписью (например: «Френч с дизайном»).",
+        reply_markup=back_admin_kb("adm_portfolio"),
+    )
+
+
+@router.message(AdminSG.add_portfolio, F.photo)
+async def adm_portfolio_photo(message: Message, state: FSMContext):
+    photo_id = message.photo[-1].file_id
+    caption = message.caption.strip() if message.caption else None
+    await add_portfolio_photo(photo_id, caption)
+    await state.clear()
+    await message.answer_photo(
+        photo_id,
+        caption=f"✅ <b>Фото добавлено!</b>\n{DIVIDER}\n"
+                f"{('💬 ' + caption) if caption else '<i>Без подписи</i>'}",
+        reply_markup=admin_menu_kb(),
+    )
+
+
+@router.message(AdminSG.add_portfolio)
+async def adm_portfolio_wrong(message: Message):
+    await message.answer("⚠️ Нужно отправить именно <b>фото</b>.")
+
+
+@router.callback_query(F.data == "adm_portfolio_list")
+async def adm_portfolio_list(call: CallbackQuery):
+    photos = await get_all_portfolio()
+    if not photos:
+        await call.answer("Фото нет")
+        return
+    text = (
+        f"🗑 <b>Удаление фото</b>\n{DIVIDER}\n"
+        f"Всего: <b>{len(photos)}</b>"
+    )
+    await call.message.edit_text(text, reply_markup=admin_portfolio_list_kb(photos))
+
+
+@router.callback_query(F.data.startswith("adm_portfolio_del:"))
+async def adm_portfolio_del(call: CallbackQuery):
+    pid = int(call.data.split(":")[1])
+    ok = await delete_portfolio_photo(pid)
+    if ok:
+        await call.answer("✅ Удалено")
+    else:
+        await call.answer("Не найдено", show_alert=True)
+
+    photos = await get_all_portfolio()
+    if not photos:
+        await call.message.edit_text(
+            f"📸 <b>Примеры работ</b>\n{DIVIDER}\nПока нет фото.",
+            reply_markup=admin_portfolio_kb(0),
+        )
+    else:
+        await call.message.edit_text(
+            f"🗑 <b>Удаление фото</b>\n{DIVIDER}\nВсего: <b>{len(photos)}</b>",
+            reply_markup=admin_portfolio_list_kb(photos),
+        )

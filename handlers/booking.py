@@ -12,9 +12,8 @@ from database.db import (
     get_slot,
 )
 from keyboards.user_kb import (
-    cancel_kb,
-    main_menu_kb,
-    slots_kb,
+    services_kb, slots_kb, confirm_kb, main_menu_kb,
+    cancel_kb, skip_photo_kb,     # 👈 добавил skip_photo_kb
 )
 from states.states import BookingSG
 from utils.pagination import (
@@ -182,33 +181,26 @@ async def enter_note(message: Message, state: FSMContext):
     if note in ("-", "—", "нет", "Нет"):
         note = None
     await state.update_data(note=note)
-
-    data = await state.get_data()
-    service = await get_service(data["service_id"])
-    slot = await get_slot(data["slot_id"])
-
-    text = (
-        f"🔎 <b>Проверь запись</b>\n"
-        f"{DIVIDER}\n"
-        f"💅 <b>{service.title}</b>\n"
-        f"💰 {money(service.price)} • ⏱ {service.duration_min} мин\n"
-        f"🗓 {fmt_dt(slot.dt)}\n"
-        f"👤 {data['client_name']}\n"
-        f"📞 {data['client_phone']}\n"
+    await state.set_state(BookingSG.entering_photo)
+    await message.answer(
+        f"📷 <b>Хочешь прикрепить фото-референс?</b>\n{DIVIDER}\n"
+        "Отправь картинку (например, как хочешь маникюр) "
+        "или нажми «Без фото».",
+        reply_markup=skip_photo_kb(),
     )
-    if note:
-        text += f"📝 <i>{note}</i>\n"
-    text += f"\n{DIVIDER}\nВсё верно?"
 
-    await state.set_state(BookingSG.confirming)
+@router.message(BookingSG.entering_photo, F.photo)
+async def enter_photo(message: Message, state: FSMContext):
+    photo_id = message.photo[-1].file_id
+    await state.update_data(photo_id=photo_id)
+    await show_booking_confirmation(message, state)
 
-    from aiogram.utils.keyboard import InlineKeyboardBuilder
-    kb = InlineKeyboardBuilder()
-    kb.button(text="✅ Подтвердить", callback_data="book_confirm")
-    kb.button(text="❌ Отмена", callback_data="cancel_action")
-    kb.adjust(2)
 
-    await message.answer(text, reply_markup=kb.as_markup())
+@router.callback_query(BookingSG.entering_photo, F.data == "booking_skip_photo")
+async def skip_photo(call: CallbackQuery, state: FSMContext):
+    await state.update_data(photo_id=None)
+    await show_booking_confirmation(call.message, state, from_callback=True)
+    await call.answer()
 
 
 @router.callback_query(BookingSG.confirming, F.data == "book_confirm")
@@ -225,10 +217,11 @@ async def confirm_booking(call: CallbackQuery, state: FSMContext):
         client_name=data["client_name"],
         client_phone=data["client_phone"],
         note=data.get("note"),
+        photo_id=data.get("photo_id"),     # 👈 передаём фото
     )
     if not booking:
         await call.message.edit_text(
-            "😔 Упс, это время только что заняли.\nПопробуй выбрать другое.",
+            "😔 Упс, это время только что заняли.",
             reply_markup=main_menu_kb(call.from_user.id in ADMIN_IDS),
         )
         return
@@ -236,23 +229,19 @@ async def confirm_booking(call: CallbackQuery, state: FSMContext):
     service = await get_service(data["service_id"])
     slot = await get_slot(data["slot_id"])
 
-    await call.message.edit_text(
-        f"🎉 <b>Ты записана!</b>\n"
-        f"{DIVIDER}\n"
-        f"💅 {service.title}\n"
-        f"🗓 {fmt_dt(slot.dt)}\n"
+    user_text = (
+        f"🎉 <b>Ты записана!</b>\n{DIVIDER}\n"
+        f"💅 {service.title}\n🗓 {fmt_dt(slot.dt)}\n"
         f"💰 {money(service.price)}\n"
-        f"📍 {data.get('address', 'ул. Примерная, 10')}\n"
-        f"{DIVIDER}\n"
-        "За день до визита придёт напоминание ⏰\n"
-        "Ждём тебя! 💖",
-        reply_markup=main_menu_kb(call.from_user.id in ADMIN_IDS),
     )
+    if booking.photo_id:
+        user_text += "📷 Фото прикреплено\n"
+    user_text += f"{DIVIDER}\nЖдём тебя! 💖"
 
-    # уведомление админам
+    await call.message.edit_text(user_text, reply_markup=main_menu_kb(call.from_user.id in ADMIN_IDS))
+
     admin_text = (
-        f"🔔 <b>НОВАЯ ЗАПИСЬ!</b>\n"
-        f"{DIVIDER}\n"
+        f"🔔 <b>НОВАЯ ЗАПИСЬ!</b>\n{DIVIDER}\n"
         f"💅 <b>{service.title}</b>\n"
         f"🗓 {fmt_dt(slot.dt)}\n"
         f"💰 {money(service.price)} • ⏱ {service.duration_min} мин\n"
@@ -266,6 +255,41 @@ async def confirm_booking(call: CallbackQuery, state: FSMContext):
 
     for admin_id in ADMIN_IDS:
         try:
-            await call.bot.send_message(admin_id, admin_text)
+            if booking.photo_id:
+                await call.bot.send_photo(admin_id, booking.photo_id, caption=admin_text)
+            else:
+                await call.bot.send_message(admin_id, admin_text)
+        except Exception as e:
+            print(f"[BOOKING NOTIFY FAIL] {admin_id}: {e}")
+
+async def show_booking_confirmation(message: Message, state: FSMContext,
+                                     from_callback: bool = False):
+    """Показ финального подтверждения записи."""
+    data = await state.get_data()
+    service = await get_service(data["service_id"])
+    slot = await get_slot(data["slot_id"])
+
+    text = (
+        f"🔎 <b>Проверь запись</b>\n"
+        f"{DIVIDER}\n"
+        f"💅 <b>{service.title}</b>\n"
+        f"💰 {money(service.price)} • ⏱ {service.duration_min} мин\n"
+        f"🗓 {fmt_dt(slot.dt)}\n"
+        f"👤 {data['client_name']}\n"
+        f"📞 {data['client_phone']}\n"
+    )
+    if data.get("note"):
+        text += f"📝 <i>{data['note']}</i>\n"
+    if data.get("photo_id"):
+        text += "📷 Фото прикреплено\n"
+    text += f"\n{DIVIDER}\nВсё верно?"
+
+    await state.set_state(BookingSG.confirming)
+
+    if from_callback:
+        try:
+            await message.edit_text(text, reply_markup=confirm_kb())
         except Exception:
-            pass
+            await message.answer(text, reply_markup=confirm_kb())
+    else:
+        await message.answer(text, reply_markup=confirm_kb())

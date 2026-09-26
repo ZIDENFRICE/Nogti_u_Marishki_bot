@@ -1,3 +1,5 @@
+from database.db import get_all_portfolio, get_portfolio_photo
+from utils.safe_edit import safe_render
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -233,3 +235,47 @@ async def render_reviews_user(call: CallbackQuery):
     )
 
     await safe_render(call, text, photo_id=r.photo_id, reply_markup=kb)
+
+PORTFOLIO_PER_PAGE = 1
+
+
+@router.callback_query(F.data == "portfolio_view")
+async def portfolio_view(call: CallbackQuery):
+    photos = await get_all_portfolio()
+    if not photos:
+        await call.message.edit_text(
+            f"📸 <b>Примеры работ</b>\n{DIVIDER}\n"
+            "Мастер скоро добавит фотографии работ 💅",
+            reply_markup=main_menu_kb(call.from_user.id in ADMIN_IDS),
+        )
+        return
+    ids = [p.id for p in photos]
+    register_pagination("portfolio_user", ids, per_page=PORTFOLIO_PER_PAGE)
+    await render_portfolio_user(call)
+
+
+async def render_portfolio_user(call: CallbackQuery):
+    page_ids, page, total_pages = get_page_info("portfolio_user")
+    if not page_ids:
+        await call.message.edit_text("Пока нет фото.")
+        return
+
+    pid = page_ids[0]
+    p = await get_portfolio_photo(pid)
+    if not p:
+        await call.answer("Фото не найдено")
+        return
+
+    caption = f"📸 <b>Примеры работ</b>  ·  {page + 1} / {total_pages}\n{DIVIDER}\n"
+    if p.caption:
+        caption += f"\n💬 <i>{p.caption}</i>"
+
+    kb = pagination_kb(
+        key="portfolio_user",
+        page=page,
+        total_pages=total_pages,
+        extra_buttons=[("💅 Записаться", "book_start")],
+        back_callback="back_main",
+        back_text="⬅️ В меню",
+    )
+    await safe_render(call, caption, photo_id=p.photo_id, reply_markup=kb)
