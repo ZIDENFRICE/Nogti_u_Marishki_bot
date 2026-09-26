@@ -14,6 +14,7 @@ def main_menu_kb(is_admin: bool = False) -> InlineKeyboardMarkup:
     kb.button(text="ℹ️ О мастере", callback_data="about")
     kb.button(text="⭐ Отзывы", callback_data="reviews_view")
     kb.button(text="✍️ Написать отзыв", callback_data="review_write")
+    kb.button(text="📄 Условия", callback_data="docs_menu")
     if is_admin:
         kb.button(text="⚙️ Админ-панель", callback_data="admin_panel")
     kb.adjust(2, 1, 2, 2, 1)
@@ -114,3 +115,24 @@ def review_bookings_kb(bookings) -> InlineKeyboardMarkup:
 
 def booking_photo_skip_kb() -> InlineKeyboardMarkup:
     return skip_photo_kb()
+
+def legal_agree_kb() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="✅ Согласен с условиями", callback_data="legal_agree")
+    return kb.as_markup()
+
+
+def docs_menu_kb() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="📄 Оферта", callback_data="doc_offer")
+    kb.button(text="🔒 Политика ПД", callback_data="doc_privacy")
+    kb.button(text="✅ Согласие ПД", callback_data="doc_consent")
+    kb.button(text="⬅️ Назад", callback_data="back_main")
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def doc_view_kb() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="⬅️ Назад", callback_data="docs_menu")
+    return kb.as_markup()

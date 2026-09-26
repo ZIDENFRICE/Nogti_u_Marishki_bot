@@ -15,7 +15,7 @@ from handlers import admin, booking, cancel, pagination, reviews, user
 from middlewares.edit_error import SafeEditMiddleware
 from services.scheduler import setup_scheduler
 from middlewares.antiflood import AntiFloodMiddleware
-
+from handlers import user, booking, admin, reviews, pagination, cancel, legal
 
 os.makedirs("logs", exist_ok=True)
 
@@ -60,6 +60,7 @@ async def main():
     dp.include_router(admin.router)
     dp.include_router(pagination.router)   # ← добавить
     dp.include_router(cancel.router)
+    dp.include_router(legal.router)
     dp.include_router(reviews.router)
     dp.include_router(booking.router)
     dp.include_router(user.router)

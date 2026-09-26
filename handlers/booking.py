@@ -1,7 +1,7 @@
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
-
+from database.db import accept_terms
 from config import ADMIN_IDS
 from database.db import (
     create_booking,
@@ -23,7 +23,7 @@ from utils.pagination import (
 )
 from utils.safe_edit import safe_edit
 from utils.texts import DIVIDER, fmt_dt, money
-
+from utils.legal import BOOKING_AGREEMENT_LINE
 router = Router()
 
 
@@ -207,6 +207,7 @@ async def skip_photo(call: CallbackQuery, state: FSMContext):
 async def confirm_booking(call: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     await state.clear()
+    await accept_terms(call.from_user.id)
 
     await get_or_create_user(call.from_user.id, call.from_user.username, call.from_user.full_name)
 
@@ -293,3 +294,4 @@ async def show_booking_confirmation(message: Message, state: FSMContext,
             await message.answer(text, reply_markup=confirm_kb())
     else:
         await message.answer(text, reply_markup=confirm_kb())
+    text += f"\n<i>{BOOKING_AGREEMENT_LINE}</i>"

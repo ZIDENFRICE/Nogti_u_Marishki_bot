@@ -557,3 +557,23 @@ async def count_portfolio() -> int:
     async with async_session() as s:
         res = await s.execute(select(func.count(PortfolioPhoto.id)))
         return res.scalar_one()
+
+async def get_user(tg_id: int) -> User | None:
+    async with async_session() as s:
+        return await s.get(User, tg_id)
+
+
+async def accept_terms(tg_id: int) -> None:
+    async with async_session() as s:
+        user = await s.get(User, tg_id)
+        if not user:
+            return
+        user.terms_accepted = True
+        user.terms_accepted_at = datetime.utcnow()
+        await s.commit()
+
+
+async def has_accepted_terms(tg_id: int) -> bool:
+    async with async_session() as s:
+        user = await s.get(User, tg_id)
+        return bool(user and user.terms_accepted)

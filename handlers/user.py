@@ -4,7 +4,9 @@ from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
-
+from utils.legal import GREETING_FOOTNOTE
+from keyboards.user_kb import legal_agree_kb
+from database.db import get_user
 from config import ADMIN_IDS
 from database.db import (
     cancel_booking,
@@ -55,24 +57,36 @@ ABOUT_TEXT = (
 @router.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
+
+    # Диплинк ?start=docs
+    args = message.text.split(maxsplit=1)
+    if len(args) > 1 and args[1].strip() == "docs":
+        from handlers.legal import cmd_docs
+        await cmd_docs(message)
+        return
+
     await get_or_create_user(
         message.from_user.id,
         message.from_user.username,
         message.from_user.full_name,
     )
+
+    user = await get_user(message.from_user.id)
     is_admin = message.from_user.id in ADMIN_IDS
 
     text = (
         f"✨ <b>Привет, {message.from_user.first_name}!</b> ✨\n"
         f"{DIVIDER}\n"
-        "Меня зовут <b>Марина</b>, я мастер ногтевого сервиса 💅\n\n"
-        "Здесь ты можешь:\n"
-        "• 💅 Записаться на удобное время\n"
-        "• 📋 Посмотреть свои записи\n"
-        "• ⭐ Оставить отзыв\n\n"
-        "Выбери действие ниже 👇"
+        f"Меня зовут <b>Марина</b>, я мастер ногтевого сервиса 💅\n\n"
+        f"Выбери действие ниже 👇\n\n"
+        f"<i>{GREETING_FOOTNOTE}</i>"
     )
-    await message.answer(text, reply_markup=main_menu_kb(is_admin))
+
+    if not (user and user.terms_accepted):
+        await message.answer(text, reply_markup=legal_agree_kb())
+        await message.answer("Меню:", reply_markup=main_menu_kb(is_admin))
+    else:
+        await message.answer(text, reply_markup=main_menu_kb(is_admin))
 
 
 @router.callback_query(F.data == "back_main")
