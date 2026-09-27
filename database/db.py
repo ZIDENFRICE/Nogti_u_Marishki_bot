@@ -570,6 +570,7 @@ async def accept_terms(tg_id: int) -> None:
             return
         user.terms_accepted = True
         user.terms_accepted_at = datetime.utcnow()
+        user.marketing_accepted = True
         await s.commit()
 
 
@@ -577,3 +578,21 @@ async def has_accepted_terms(tg_id: int) -> bool:
     async with async_session() as s:
         user = await s.get(User, tg_id)
         return bool(user and user.terms_accepted)
+
+async def get_users_for_broadcast() -> list[int]:
+    async with async_session() as s:
+        res = await s.execute(
+            select(User.id).where(
+                User.marketing_accepted == True,
+                User.is_blocked == False,
+            )
+        )
+        return [row[0] for row in res.all()]
+
+
+async def set_marketing(tg_id: int, value: bool) -> None:
+    async with async_session() as s:
+        user = await s.get(User, tg_id)
+        if user:
+            user.marketing_accepted = value
+            await s.commit()

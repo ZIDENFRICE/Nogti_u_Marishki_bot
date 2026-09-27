@@ -1,3 +1,7 @@
+import asyncio
+from keyboards.admin_kb import slot_notify_confirm_kb
+from database.db import get_users_for_broadcast, get_all_future_slots
+
 from datetime import datetime
 
 from aiogram import F, Router
@@ -535,11 +539,15 @@ async def adm_slot_datetime(message: Message, state: FSMContext):
     if dt < now():
         await message.answer("Эта дата уже в прошлом. Введи будущую дату.")
         return
+
     await state.clear()
     slot = await add_slot(dt)
+
+    await state.set_state(AdminSG.confirm_slot_notify)
     await message.answer(
-        f"✅ <b>Слот добавлен</b>\n{DIVIDER}\n🗓 {fmt_dt(slot.dt)}",
-        reply_markup=admin_menu_kb(),
+        f"✅ <b>Слот добавлен</b>\n{DIVIDER}\n🗓 {fmt_dt(slot.dt)}\n\n"
+        f"📢 Уведомить клиентов о новом слоте?",
+        reply_markup=slot_notify_confirm_kb(),
     )
 
 
@@ -568,17 +576,21 @@ async def adm_slot_bulk_input(message: Message, state: FSMContext):
             dts.append(dt)
         except ValueError:
             errors.append(f"{line} — неверный формат")
+
     if not dts:
         await message.answer("Не удалось распознать ни одной даты. Проверь формат.")
         return
-    await state.clear()
+
     n = await add_slots_bulk(dts)
     text = f"✅ <b>Добавлено слотов: {n}</b>\n{DIVIDER}\n"
     for dt in dts:
         text += f"🟢 {fmt_dt(dt)}\n"
     if errors:
-        text += "\n⚠️ <b>Ошибки:</b>\n" + "\n".join(errors)
-    await message.answer(text, reply_markup=admin_menu_kb())
+        text += f"\n⚠️ <b>Ошибки:</b>\n" + "\n".join(errors)
+
+    await state.set_state(AdminSG.confirm_slot_notify)
+    text += "\n\n📢 Уведомить клиентов о новых слотах?"
+    await message.answer(text, reply_markup=slot_notify_confirm_kb())
 
 
 # ================== КЛИЕНТЫ ==================
@@ -888,3 +900,62 @@ async def adm_portfolio_del(call: CallbackQuery):
             f"🗑 <b>Удаление фото</b>\n{DIVIDER}\nВсего: <b>{len(photos)}</b>",
             reply_markup=admin_portfolio_list_kb(photos),
         )
+# ================= РАССЫЛКА О НОВЫХ СЛОТАХ =================
+
+@router.callback_query(F.data == "adm_slot_notify_yes")
+async def adm_slot_notify_yes(call: CallbackQuery, state: FSMContext):
+    await state.clear()
+
+    user_ids = await get_users_for_broadcast()
+    if not user_ids:
+        await call.message.edit_text(
+            "📭 Нет клиентов для рассылки.",
+            reply_markup=admin_menu_kb(),
+        )
+        return
+
+    slots = await get_all_future_slots()
+    free_slots = [s for s in slots if not s.is_booked][:5]
+
+    slots_text = "".join(f"🕐 {fmt_dt(s.dt)}\n" for s in free_slots)
+
+    text = (
+        f"🔔 <b>Появились новые окошки!</b>\n"
+        f"{DIVIDER}\n\n"
+        f"Спеши записаться 💅\n\n"
+        f"{slots_text}"
+    )
+
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    kb = InlineKeyboardBuilder()
+    kb.button(text="💅 Записаться", callback_data="book_start")
+
+    await call.message.edit_text(
+        f"📢 Отправляю уведомление {len(user_ids)} клиентам..."
+    )
+
+    sent, failed = 0, 0
+    for uid in user_ids:
+        try:
+            await call.bot.send_message(uid, text, reply_markup=kb.as_markup())
+            sent += 1
+            await asyncio.sleep(0.05)
+        except Exception as e:
+            failed += 1
+            print(f"[SLOT NOTIFY FAIL] {uid}: {e}")
+
+    await call.message.edit_text(
+        f"✅ <b>Рассылка завершена</b>\n{DIVIDER}\n"
+        f"📤 Отправлено: <b>{sent}</b>\n"
+        f"❌ Ошибок: <b>{failed}</b>",
+        reply_markup=admin_menu_kb(),
+    )
+
+
+@router.callback_query(F.data == "adm_slot_notify_no")
+async def adm_slot_notify_no(call: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await call.message.edit_text(
+        "Ок, никого не уведомляем.",
+        reply_markup=admin_menu_kb(),
+    )

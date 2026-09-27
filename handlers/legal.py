@@ -40,3 +40,19 @@ async def legal_agree(call: CallbackQuery):
 @router.message(F.text == "/docs")
 async def cmd_docs(message: Message):
     await message.answer(DOCS_MENU_TEXT, reply_markup=docs_menu_kb())
+
+@router.message(F.text == "/unsubscribe")
+async def cmd_unsubscribe(message: Message):
+    from database.db import set_marketing
+    await set_marketing(message.from_user.id, False)
+    await message.answer(
+        "❌ Ты отписан(а) от рассылки.\n\n"
+        "Хочешь вернуть? Напиши /subscribe"
+    )
+
+
+@router.message(F.text == "/subscribe")
+async def cmd_subscribe(message: Message):
+    from database.db import set_marketing
+    await set_marketing(message.from_user.id, True)
+    await message.answer("✅ Ты снова подписан(а) на рассылку.")

@@ -116,3 +116,10 @@ def admin_portfolio_list_kb(photos: list) -> InlineKeyboardMarkup:
     kb.button(text="⬅️ Назад", callback_data="adm_portfolio")
     kb.adjust(1)
     return kb.as_markup()
+
+def slot_notify_confirm_kb() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="📢 Да, уведомить", callback_data="adm_slot_notify_yes")
+    kb.button(text="❌ Нет", callback_data="adm_slot_notify_no")
+    kb.adjust(2)
+    return kb.as_markup()

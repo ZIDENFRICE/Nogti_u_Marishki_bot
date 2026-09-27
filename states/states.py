@@ -28,6 +28,7 @@ class AdminSG(StatesGroup):
     # поиск клиента
     search_client = State()
     add_portfolio = State()      # 👈 НОВОЕ
+    confirm_slot_notify = State()
 
 
 class ReviewSG(StatesGroup):

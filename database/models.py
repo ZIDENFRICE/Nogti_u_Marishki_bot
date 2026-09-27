@@ -21,6 +21,7 @@ class User(Base):
     bookings: Mapped[list["Booking"]] = relationship(back_populates="user")
     terms_accepted: Mapped[bool] = mapped_column(Boolean, default=False)
     terms_accepted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    marketing_accepted: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
 class Service(Base):
