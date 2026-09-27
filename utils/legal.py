@@ -5,20 +5,20 @@
 # ============================================================
 # ДАННЫЕ МАСТЕРА — заполнить под каждого клиента
 # ============================================================
-MASTER_NAME = "Иванова Мария Петровна"
+MASTER_NAME = "Трухина Марина Алексеевна"
 MASTER_STATUS = "самозанятая"
-MASTER_INN = "771234567890"
-MASTER_PHONE = "+7 (999) 123-45-67"
-MASTER_EMAIL = "marina@example.com"
-MASTER_TG = "@marina_nails"
-MASTER_CITY = "г. Москва"
-MASTER_EDIT_DATE = "26.09.2025"
+MASTER_INN = "501220907583"
+MASTER_PHONE = "+7 (915) 361-77-06"
+MASTER_EMAIL = "marishkatrukhina@yandex.ru"
+MASTER_TG = "@ggingger1"
+MASTER_CITY = "г. Железнодорожный"
+MASTER_EDIT_DATE = "27.09.2026"
 MASTER_BOT_NAME = "Ногти у Маришки"
 
-PD_STORAGE_YEARS = 3
-CANCEL_HOURS = 3
+PD_STORAGE_YEARS = 5
+CANCEL_HOURS = 5
 
-BOT_USERNAME = "ТВОЙ_БОТ_БЕЗ_@"   # замени после создания бота
+BOT_USERNAME = "Nogti_u_Marishki_bot"   # замени после создания бота
 
 
 # ============================================================
