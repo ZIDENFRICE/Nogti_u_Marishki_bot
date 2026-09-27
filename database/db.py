@@ -596,3 +596,60 @@ async def set_marketing(tg_id: int, value: bool) -> None:
         if user:
             user.marketing_accepted = value
             await s.commit()
+
+# ================= SETTINGS =================
+
+from database.models import Setting
+
+
+async def get_setting(key: str) -> Setting | None:
+    async with async_session() as s:
+        res = await s.execute(select(Setting).where(Setting.key == key))
+        return res.scalar_one_or_none()
+
+
+async def set_setting(key: str, value: str | None = None,
+                      photo_id: str | None = None) -> Setting:
+    async with async_session() as s:
+        res = await s.execute(select(Setting).where(Setting.key == key))
+        st = res.scalar_one_or_none()
+
+        if st:
+            if value is not None:
+                st.value = value
+            if photo_id is not None:
+                st.photo_id = photo_id
+            st.updated_at = datetime.utcnow()
+        else:
+            st = Setting(key=key, value=value, photo_id=photo_id)
+            s.add(st)
+
+        await s.commit()
+        await s.refresh(st)
+        return st
+
+
+async def get_about_text() -> str:
+    """Возвращает текст «О мастере». Если не задан — дефолт."""
+    st = await get_setting("about_text")
+    if st and st.value:
+        return st.value
+    return (
+        "💅 <b>Мастер Марина</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "Опыт более 5 лет. Работаю с любыми формами и длиной.\n\n"
+        "<b>Что я делаю:</b>\n"
+        "• Маникюр (аппаратный, комби)\n"
+        "• Покрытие гель-лак\n"
+        "• Наращивание и коррекция\n"
+        "• Дизайн, стемпинг, слайдеры\n"
+        "• Педикюр\n\n"
+        "✦ ─────────── ✦\n"
+        "<i>Запись через бота — быстро и удобно!</i>"
+    )
+
+
+async def get_about_photo() -> str | None:
+    """Возвращает file_id фото мастера (если задано)."""
+    st = await get_setting("about_text")
+    return st.photo_id if st else None

@@ -30,6 +30,9 @@ class AdminSG(StatesGroup):
     add_portfolio = State()      # 👈 НОВОЕ
     confirm_slot_notify = State()
 
+    edit_about_text = State()      # 👈 НОВОЕ
+    edit_about_photo = State()     # 👈 НОВОЕ
+
 
 class ReviewSG(StatesGroup):
     choosing_booking = State()

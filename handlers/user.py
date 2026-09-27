@@ -8,6 +8,8 @@ from utils.legal import GREETING_FOOTNOTE
 from keyboards.user_kb import legal_agree_kb
 from database.db import get_user
 from config import ADMIN_IDS
+from database.db import get_about_text, get_about_photo
+from utils.safe_edit import safe_render
 from database.db import (
     cancel_booking,
     get_all_reviews,
@@ -40,18 +42,6 @@ REVIEWS_PER_PAGE = 5
 router = Router()
 
 
-ABOUT_TEXT = (
-    f"<b>💅 Мастер Марина</b>\n"
-    f"{DIVIDER}\n"
-    "Большой опыт работы. Работаю с разными формами и длиной.\n\n"
-    "<b>Что я делаю:</b>\n"
-    "• Маникюр (аппаратный, комби)\n"
-    "• Покрытие гель-лак\n"
-    "• Наращивание и коррекция\n"
-    "• Дизайн, стемпинг, слайдеры\n"
-    f"{DIVIDER_STAR}\n"
-    "<i>Запись через бота — быстро и удобно!</i>"
-)
 
 
 @router.message(Command("start"))
@@ -104,12 +94,26 @@ async def back_main(call: CallbackQuery, state: FSMContext):
         await call.message.answer(text, reply_markup=main_menu_kb(is_admin))
 
 
+
 @router.callback_query(F.data == "about")
 async def about(call: CallbackQuery):
-    await call.message.edit_text(
-        ABOUT_TEXT,
-        reply_markup=main_menu_kb(call.from_user.id in ADMIN_IDS),
-    )
+    await render_about(call, back_to="back_main")
+
+
+async def render_about(call: CallbackQuery, back_to: str = "back_main"):
+    """Рендер раздела «О мастере» — из БД."""
+    text = await get_about_text()
+    photo_id = await get_about_photo()
+
+    # Собираем клавиатуру
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    kb = InlineKeyboardBuilder()
+    if back_to == "adm_about":
+        kb.button(text="⬅️ Назад", callback_data="adm_about")
+    else:
+        kb.button(text="⬅️ В меню", callback_data="back_main")
+
+    await safe_render(call, text, photo_id=photo_id, reply_markup=kb.as_markup())
 
 
 # ================== МОИ ЗАПИСИ ==================
