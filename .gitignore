@@ -1,8 +1,37 @@
-.env
+# Окружение
 .venv/
 venv/
+env/
+ENV/
+
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*.so
+
+# .env (токены!)
+.env
+.env.local
+
+# База данных (локальная)
 data/
 *.db
+*.sqlite
+
+# Логи
 logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store          # Mac
+Thumbs.db          # Windows
+desktop.ini        # Windows
+
+# Временные файлы
+~$*
+*.tmp
