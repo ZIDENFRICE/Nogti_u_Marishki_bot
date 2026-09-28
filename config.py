@@ -13,7 +13,18 @@ ADMIN_IDS = [
 
 REMINDER_HOURS = int(os.getenv("REMINDER_HOURS", "3"))
 
-DB_URL = "sqlite+aiosqlite:///data/bot.db"
+# Neon PostgreSQL — берётся из переменных окружения
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+if DATABASE_URL:
+    # Neon даёт строку вида: postgresql://...
+    # SQLAlchemy нужен postgresql+asyncpg://...
+    if DATABASE_URL.startswith("postgresql://"):
+        DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+    DB_URL = DATABASE_URL
+else:
+    # Локально (на Mac) — SQLite, для тестов
+    DB_URL = "sqlite+aiosqlite:///data/bot.db"
 
 # === Информация о мастере / салоне ===
 MASTER_NAME = "Марина"

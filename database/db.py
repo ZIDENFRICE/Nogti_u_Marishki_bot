@@ -10,7 +10,7 @@ from database.models import Base, Booking, Broadcast, Review, Service, Slot, Use
 
 os.makedirs("data", exist_ok=True)
 
-engine = create_async_engine(DB_URL, echo=False)
+engine = create_async_engine(DB_URL, echo=False, pool_pre_ping=True)
 async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
 
