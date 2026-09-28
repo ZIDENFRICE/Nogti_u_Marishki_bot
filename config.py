@@ -17,13 +17,16 @@ REMINDER_HOURS = int(os.getenv("REMINDER_HOURS", "3"))
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if DATABASE_URL:
-    # Neon даёт строку вида: postgresql://...
-    # SQLAlchemy нужен postgresql+asyncpg://...
+    # убираем ?sslmode=require из URL — asyncpg его не понимает
+    if "?" in DATABASE_URL:
+        DATABASE_URL = DATABASE_URL.split("?")[0]
+
+    # заменяем postgresql:// на postgresql+asyncpg://
     if DATABASE_URL.startswith("postgresql://"):
         DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+
     DB_URL = DATABASE_URL
 else:
-    # Локально (на Mac) — SQLite, для тестов
     DB_URL = "sqlite+aiosqlite:///data/bot.db"
 
 # === Информация о мастере / салоне ===
