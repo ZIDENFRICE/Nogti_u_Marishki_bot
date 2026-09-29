@@ -21,6 +21,7 @@ class User(Base):
     bookings: Mapped[list["Booking"]] = relationship(back_populates="user")
     terms_accepted: Mapped[bool] = mapped_column(Boolean, default=False)
     terms_accepted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    marketing_accepted: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
 class Service(Base):
@@ -102,3 +103,13 @@ class PortfolioPhoto(Base):
     photo_id: Mapped[str] = mapped_column(String(256))
     caption: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class Setting(Base):
+    __tablename__ = "settings"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    key: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    photo_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

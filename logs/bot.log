@@ -20,3 +20,11 @@
 2026-09-25 14:38:04,388 | ERROR | aiogram.dispatcher | Failed to fetch updates - TelegramNetworkError: HTTP Client says - ServerDisconnectedError: Server disconnected
 2026-09-25 14:38:04,388 | WARNING | aiogram.dispatcher | Sleep for 1.000000 seconds and try again... (tryings = 0, bot id = 8822792585)
 2026-09-25 14:38:04,654 | INFO | aiogram.dispatcher | Polling stopped for bot @Nogti_u_Marishki_bot id=8822792585 - 'Ногти у Маришки'
+2026-09-27 23:37:39,254 | INFO | apscheduler.scheduler | Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-09-27 23:37:39,255 | INFO | apscheduler.scheduler | Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-09-27 23:37:39,255 | INFO | apscheduler.scheduler | Added job "check_client_reminders" to job store "default"
+2026-09-27 23:37:39,255 | INFO | apscheduler.scheduler | Added job "remind_admin_morning" to job store "default"
+2026-09-27 23:37:39,255 | INFO | apscheduler.scheduler | Scheduler started
+2026-09-27 23:37:39,255 | INFO | aiogram.dispatcher | Start polling
+2026-09-27 23:37:44,954 | WARNING | aiogram.dispatcher | Received SIGINT signal
+2026-09-27 23:37:44,955 | INFO | aiogram.dispatcher | Polling stopped

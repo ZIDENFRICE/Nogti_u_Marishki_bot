@@ -10,7 +10,7 @@ from database.models import Base, Booking, Broadcast, Review, Service, Slot, Use
 
 os.makedirs("data", exist_ok=True)
 
-engine = create_async_engine(DB_URL, echo=False)
+engine = create_async_engine(DB_URL, echo=False, pool_pre_ping=True)
 async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
 
@@ -409,11 +409,11 @@ async def get_stats() -> dict:
 
 
 async def get_revenue_by_month(year: int, month: int) -> int:
-    start = datetime(year, month, 1, tzinfo=MSK)
+    start = datetime(year, month, 1)
     if month == 12:
-        end = datetime(year + 1, 1, 1, tzinfo=MSK)
+        end = datetime(year + 1, 1, 1)
     else:
-        end = datetime(year, month + 1, 1, tzinfo=MSK)
+        end = datetime(year, month + 1, 1)
     async with async_session() as s:
         res = await s.execute(
             select(func.coalesce(func.sum(Service.price), 0))
@@ -570,6 +570,7 @@ async def accept_terms(tg_id: int) -> None:
             return
         user.terms_accepted = True
         user.terms_accepted_at = datetime.utcnow()
+        user.marketing_accepted = True
         await s.commit()
 
 
@@ -577,3 +578,78 @@ async def has_accepted_terms(tg_id: int) -> bool:
     async with async_session() as s:
         user = await s.get(User, tg_id)
         return bool(user and user.terms_accepted)
+
+async def get_users_for_broadcast() -> list[int]:
+    async with async_session() as s:
+        res = await s.execute(
+            select(User.id).where(
+                User.marketing_accepted == True,
+                User.is_blocked == False,
+            )
+        )
+        return [row[0] for row in res.all()]
+
+
+async def set_marketing(tg_id: int, value: bool) -> None:
+    async with async_session() as s:
+        user = await s.get(User, tg_id)
+        if user:
+            user.marketing_accepted = value
+            await s.commit()
+
+# ================= SETTINGS =================
+
+from database.models import Setting
+
+
+async def get_setting(key: str) -> Setting | None:
+    async with async_session() as s:
+        res = await s.execute(select(Setting).where(Setting.key == key))
+        return res.scalar_one_or_none()
+
+
+async def set_setting(key: str, value: str | None = None,
+                      photo_id: str | None = None) -> Setting:
+    async with async_session() as s:
+        res = await s.execute(select(Setting).where(Setting.key == key))
+        st = res.scalar_one_or_none()
+
+        if st:
+            if value is not None:
+                st.value = value
+            if photo_id is not None:
+                st.photo_id = photo_id
+            st.updated_at = datetime.utcnow()
+        else:
+            st = Setting(key=key, value=value, photo_id=photo_id)
+            s.add(st)
+
+        await s.commit()
+        await s.refresh(st)
+        return st
+
+
+async def get_about_text() -> str:
+    """Возвращает текст «О мастере». Если не задан — дефолт."""
+    st = await get_setting("about_text")
+    if st and st.value:
+        return st.value
+    return (
+        "💅 <b>Мастер Марина</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "Опыт более 5 лет. Работаю с любыми формами и длиной.\n\n"
+        "<b>Что я делаю:</b>\n"
+        "• Маникюр (аппаратный, комби)\n"
+        "• Покрытие гель-лак\n"
+        "• Наращивание и коррекция\n"
+        "• Дизайн, стемпинг, слайдеры\n"
+        "• Педикюр\n\n"
+        "✦ ─────────── ✦\n"
+        "<i>Запись через бота — быстро и удобно!</i>"
+    )
+
+
+async def get_about_photo() -> str | None:
+    """Возвращает file_id фото мастера (если задано)."""
+    st = await get_setting("about_text")
+    return st.photo_id if st else None

@@ -1,3 +1,8 @@
+import asyncio
+from keyboards.admin_kb import slot_notify_confirm_kb
+from database.db import get_users_for_broadcast, get_all_future_slots
+from database.db import get_setting, set_setting, get_about_text, get_about_photo
+from keyboards.admin_kb import admin_about_kb
 from datetime import datetime
 
 from aiogram import F, Router
@@ -535,11 +540,15 @@ async def adm_slot_datetime(message: Message, state: FSMContext):
     if dt < now():
         await message.answer("Эта дата уже в прошлом. Введи будущую дату.")
         return
+
     await state.clear()
     slot = await add_slot(dt)
+
+    await state.set_state(AdminSG.confirm_slot_notify)
     await message.answer(
-        f"✅ <b>Слот добавлен</b>\n{DIVIDER}\n🗓 {fmt_dt(slot.dt)}",
-        reply_markup=admin_menu_kb(),
+        f"✅ <b>Слот добавлен</b>\n{DIVIDER}\n🗓 {fmt_dt(slot.dt)}\n\n"
+        f"📢 Уведомить клиентов о новом слоте?",
+        reply_markup=slot_notify_confirm_kb(),
     )
 
 
@@ -568,17 +577,21 @@ async def adm_slot_bulk_input(message: Message, state: FSMContext):
             dts.append(dt)
         except ValueError:
             errors.append(f"{line} — неверный формат")
+
     if not dts:
         await message.answer("Не удалось распознать ни одной даты. Проверь формат.")
         return
-    await state.clear()
+
     n = await add_slots_bulk(dts)
     text = f"✅ <b>Добавлено слотов: {n}</b>\n{DIVIDER}\n"
     for dt in dts:
         text += f"🟢 {fmt_dt(dt)}\n"
     if errors:
-        text += "\n⚠️ <b>Ошибки:</b>\n" + "\n".join(errors)
-    await message.answer(text, reply_markup=admin_menu_kb())
+        text += f"\n⚠️ <b>Ошибки:</b>\n" + "\n".join(errors)
+
+    await state.set_state(AdminSG.confirm_slot_notify)
+    text += "\n\n📢 Уведомить клиентов о новых слотах?"
+    await message.answer(text, reply_markup=slot_notify_confirm_kb())
 
 
 # ================== КЛИЕНТЫ ==================
@@ -888,3 +901,196 @@ async def adm_portfolio_del(call: CallbackQuery):
             f"🗑 <b>Удаление фото</b>\n{DIVIDER}\nВсего: <b>{len(photos)}</b>",
             reply_markup=admin_portfolio_list_kb(photos),
         )
+# ================= РАССЫЛКА О НОВЫХ СЛОТАХ =================
+
+@router.callback_query(F.data == "adm_slot_notify_yes")
+async def adm_slot_notify_yes(call: CallbackQuery, state: FSMContext):
+    await state.clear()
+
+    user_ids = await get_users_for_broadcast()
+    if not user_ids:
+        await call.message.edit_text(
+            "📭 Нет клиентов для рассылки.",
+            reply_markup=admin_menu_kb(),
+        )
+        return
+
+    slots = await get_all_future_slots()
+    free_slots = [s for s in slots if not s.is_booked][:5]
+
+    slots_text = "".join(f"🕐 {fmt_dt(s.dt)}\n" for s in free_slots)
+
+    text = (
+        f"🔔 <b>Появились новые окошки!</b>\n"
+        f"{DIVIDER}\n\n"
+        f"Спеши записаться 💅\n\n"
+        f"{slots_text}"
+    )
+
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    kb = InlineKeyboardBuilder()
+    kb.button(text="💅 Записаться", callback_data="book_start")
+
+    await call.message.edit_text(
+        f"📢 Отправляю уведомление {len(user_ids)} клиентам..."
+    )
+
+    sent, failed = 0, 0
+    for uid in user_ids:
+        try:
+            await call.bot.send_message(uid, text, reply_markup=kb.as_markup())
+            sent += 1
+            await asyncio.sleep(0.05)
+        except Exception as e:
+            failed += 1
+            print(f"[SLOT NOTIFY FAIL] {uid}: {e}")
+
+    await call.message.edit_text(
+        f"✅ <b>Рассылка завершена</b>\n{DIVIDER}\n"
+        f"📤 Отправлено: <b>{sent}</b>\n"
+        f"❌ Ошибок: <b>{failed}</b>",
+        reply_markup=admin_menu_kb(),
+    )
+
+
+@router.callback_query(F.data == "adm_slot_notify_no")
+async def adm_slot_notify_no(call: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await call.message.edit_text(
+        "Ок, никого не уведомляем.",
+        reply_markup=admin_menu_kb(),
+    )
+
+# ================= О МАСТЕРЕ =================
+
+@router.callback_query(F.data == "adm_about")
+async def adm_about(call: CallbackQuery, state: FSMContext):
+    await state.clear()
+    about_text = await get_about_text()
+    photo_id = await get_about_photo()
+
+    header = (
+        f"✏️ <b>О мастере</b>\n"
+        f"{DIVIDER}\n"
+        f"Здесь ты можешь изменить текст и фото,\n"
+        f"которые клиенты видят в разделе «ℹ️ О мастере».\n\n"
+        f"<b>Текущий текст:</b>"
+    )
+
+    if photo_id:
+        try:
+            await call.message.delete()
+        except Exception:
+            pass
+        await call.message.answer_photo(
+            photo_id,
+            caption=header + "\n\n" + about_text,
+            reply_markup=admin_about_kb(True),
+        )
+    else:
+        try:
+            await call.message.edit_text(
+                header + "\n\n" + about_text,
+                reply_markup=admin_about_kb(False),
+            )
+        except Exception:
+            await call.message.answer(
+                header + "\n\n" + about_text,
+                reply_markup=admin_about_kb(False),
+            )
+
+
+@router.callback_query(F.data == "adm_about_edit_text")
+async def adm_about_edit_text(call: CallbackQuery, state: FSMContext):
+    await state.set_state(AdminSG.edit_about_text)
+    await call.message.edit_text(
+        f"✏️ <b>Редактирование текста «О мастере»</b>\n"
+        f"{DIVIDER}\n\n"
+        f"Отправь новый текст одним сообщением.\n\n"
+        f"<b>Можно использовать HTML:</b>\n"
+        f"• <code>&lt;b&gt;жирный&lt;/b&gt;</code>\n"
+        f"• <code>&lt;i&gt;курсив&lt;/i&gt;</code>\n"
+        f"• <code>&lt;code&gt;моноширинный&lt;/code&gt;</code>\n\n"
+        f"<i>Отменить — /cancel</i>",
+        reply_markup=back_admin_kb("adm_about"),
+    )
+
+
+@router.message(AdminSG.edit_about_text, F.text)
+async def adm_about_save_text(message: Message, state: FSMContext):
+    if message.text == "/cancel":
+        await state.clear()
+        await message.answer("Отменено.", reply_markup=admin_menu_kb())
+        return
+
+    text = message.text.strip()
+    if len(text) < 10:
+        await message.answer("Слишком короткий текст. Минимум 10 символов.")
+        return
+    if len(text) > 3000:
+        await message.answer("Слишком длинный. Максимум 3000 символов.")
+        return
+
+    await set_setting("about_text", value=text)
+    await state.clear()
+
+    await message.answer(
+        f"✅ <b>Текст обновлён</b>\n{DIVIDER}\n\n"
+        f"<b>Так теперь видят клиенты:</b>\n\n{text}",
+        reply_markup=admin_menu_kb(),
+    )
+
+
+@router.callback_query(F.data == "adm_about_edit_photo")
+async def adm_about_edit_photo(call: CallbackQuery, state: FSMContext):
+    await state.set_state(AdminSG.edit_about_photo)
+    await call.message.edit_text(
+        f"🖼 <b>Фото мастера</b>\n{DIVIDER}\n\n"
+        f"Отправь фото. Оно будет показано клиентам\n"
+        f"в разделе «ℹ️ О мастере».\n\n"
+        f"<i>Отменить — /cancel</i>",
+        reply_markup=back_admin_kb("adm_about"),
+    )
+
+
+@router.message(AdminSG.edit_about_photo, F.photo)
+async def adm_about_save_photo(message: Message, state: FSMContext):
+    photo_id = message.photo[-1].file_id
+
+    # сохраняем фото, не трогая текст
+    st = await get_setting("about_text")
+    if st:
+        st.photo_id = photo_id
+        await set_setting("about_text", photo_id=photo_id)
+    else:
+        # если записи ещё нет, создаём её с дефолтным текстом
+        default_text = await get_about_text()
+        await set_setting("about_text", value=default_text, photo_id=photo_id)
+
+    await state.clear()
+    await message.answer_photo(
+        photo_id,
+        caption=f"✅ <b>Фото обновлено</b>\n{DIVIDER}\n"
+                f"Клиенты увидят это фото в разделе «ℹ️ О мастере».",
+        reply_markup=admin_menu_kb(),
+    )
+
+
+@router.message(AdminSG.edit_about_photo)
+async def adm_about_photo_wrong(message: Message):
+    await message.answer("⚠️ Нужно отправить именно <b>фото</b>. Попробуй снова.")
+
+
+@router.callback_query(F.data == "adm_about_del_photo")
+async def adm_about_del_photo(call: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await set_setting("about_text", photo_id="")
+    await call.answer("🗑 Фото удалено")
+    await adm_about(call, state)
+
+
+@router.callback_query(F.data == "adm_about_preview")
+async def adm_about_preview(call: CallbackQuery):
+    """Показать как видят клиенты."""
+    from handlers.user import render_about
+    await render_about(call, back_to="adm_about")

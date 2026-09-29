@@ -13,7 +13,8 @@ def admin_menu_kb() -> InlineKeyboardMarkup:
     kb.button(text="📋 Все записи", callback_data="adm_bookings")
     kb.button(text="💅 Услуги", callback_data="adm_services")
     kb.button(text="🕐 Слоты", callback_data="adm_slots")
-    kb.button(text="📸 Примеры работ", callback_data="adm_portfolio")   # 👈 НОВОЕ
+    kb.button(text="📸 Примеры работ", callback_data="adm_portfolio")
+    kb.button(text="✏️ О мастере", callback_data="adm_about")   # 👈 НОВОЕ
     kb.button(text="👥 Клиенты", callback_data="adm_clients")
     kb.button(text="🔍 Поиск клиента", callback_data="adm_search")
     kb.button(text="⭐ Отзывы", callback_data="adm_reviews")
@@ -114,5 +115,25 @@ def admin_portfolio_list_kb(photos: list) -> InlineKeyboardMarkup:
         short = (p.caption[:30] + "…") if p.caption and len(p.caption) > 30 else (p.caption or "без подписи")
         kb.button(text=f"🗑 {i}. {short}", callback_data=f"adm_portfolio_del:{p.id}")
     kb.button(text="⬅️ Назад", callback_data="adm_portfolio")
+    kb.adjust(1)
+    return kb.as_markup()
+
+def slot_notify_confirm_kb() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="📢 Да, уведомить", callback_data="adm_slot_notify_yes")
+    kb.button(text="❌ Нет", callback_data="adm_slot_notify_no")
+    kb.adjust(2)
+    return kb.as_markup()
+
+def admin_about_kb(has_photo: bool) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.button(text="✏️ Редактировать текст", callback_data="adm_about_edit_text")
+    if has_photo:
+        kb.button(text="🖼 Заменить фото", callback_data="adm_about_edit_photo")
+        kb.button(text="🗑 Удалить фото", callback_data="adm_about_del_photo")
+    else:
+        kb.button(text="🖼 Добавить фото", callback_data="adm_about_edit_photo")
+    kb.button(text="👁 Посмотреть как видят клиенты", callback_data="adm_about_preview")
+    kb.button(text="⬅️ Назад", callback_data="admin_panel")
     kb.adjust(1)
     return kb.as_markup()
