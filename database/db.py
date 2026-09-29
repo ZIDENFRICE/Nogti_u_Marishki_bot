@@ -262,7 +262,7 @@ async def get_active_bookings() -> list[Booking]:
 
 async def get_bookings_today() -> list[Booking]:
     today_date = today()   # ← переименовали переменную
-    start = datetime.combine(today_date, datetime.min.time()).replace(tzinfo=MSK)
+    start = datetime.combine(today_date, datetime.min.time())
     end = start + timedelta(days=1)
     async with async_session() as s:
         res = await s.execute(
@@ -281,7 +281,7 @@ async def get_bookings_today() -> list[Booking]:
 
 async def get_bookings_tomorrow() -> list[Booking]:
     tomorrow_date = today() + timedelta(days=1)   # ← переименовали
-    start = datetime.combine(tomorrow_date, datetime.min.time()).replace(tzinfo=MSK)
+    start = datetime.combine(tomorrow_date, datetime.min.time())
     end = start + timedelta(days=1)
     async with async_session() as s:
         res = await s.execute(

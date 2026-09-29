@@ -528,7 +528,7 @@ async def adm_slot_add(call: CallbackQuery, state: FSMContext):
 @router.message(AdminSG.add_slot_datetime, F.text)
 async def adm_slot_datetime(message: Message, state: FSMContext):
     try:
-        dt = datetime.strptime(message.text.strip(), "%d.%m.%Y %H:%M").replace(tzinfo=MSK)
+        dt = datetime.strptime(message.text.strip(), "%d.%m.%Y %H:%M")
     except ValueError:
         await message.answer("Неверный формат. Пример: <code>25.12.2025 14:30</code>")
         return
@@ -561,7 +561,7 @@ async def adm_slot_bulk_input(message: Message, state: FSMContext):
     dts, errors = [], []
     for line in lines:
         try:
-            dt = datetime.strptime(line, "%d.%m.%Y %H:%M").replace(tzinfo=MSK)
+            dt = datetime.strptime(line, "%d.%m.%Y %H:%M")
             if dt < now():
                 errors.append(f"{line} — в прошлом")
                 continue

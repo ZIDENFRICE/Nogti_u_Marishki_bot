@@ -30,8 +30,11 @@ MSK = timezone(timedelta(hours=3))
 
 
 def now() -> datetime:
-    """Текущее время в МСК (с таймзоной)."""
-    return datetime.now(MSK)
+    """
+    Текущее время в МСК, но БЕЗ tzinfo (naive).
+    Это нужно для совместимости с PostgreSQL TIMESTAMP WITHOUT TIME ZONE.
+    """
+    return datetime.now(MSK).replace(tzinfo=None)
 
 
 def today():
