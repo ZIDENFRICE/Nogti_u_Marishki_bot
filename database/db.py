@@ -161,22 +161,22 @@ async def delete_slot(slot_id: int, force: bool = False) -> dict:
             "dt": slot.dt,
         }
 
-        if slot.is_booked:
-            if not force:
-                return result
+        # 👇 НАЙДИ ВСЕ СВЯЗАННЫЕ ЗАПИСИ (не только активные)
+        res = await s.execute(
+            select(Booking).where(Booking.slot_id == slot_id)
+        )
+        bookings = res.scalars().all()
 
-            res = await s.execute(
-                select(Booking).where(
-                    Booking.slot_id == slot_id,
-                    Booking.status == "active",
-                )
-            )
-            booking = res.scalar_one_or_none()
-            if booking:
+        for booking in bookings:
+            # если активная — отменяем
+            if booking.status == "active":
                 result["booking_id"] = booking.id
                 result["user_id"] = booking.user_id
                 booking.status = "cancelled"
+            # 👇 обнуляем ссылку на слот у ВСЕХ записей
+            booking.slot_id = None
 
+        await s.flush()  # фиксируем обнуление
         await s.delete(slot)
         await s.commit()
         result["deleted"] = True
