@@ -161,24 +161,24 @@ async def delete_slot(slot_id: int, force: bool = False) -> dict:
             "dt": slot.dt,
         }
 
-        # 👇 НАЙДИ ВСЕ СВЯЗАННЫЕ ЗАПИСИ (не только активные)
+        # Находим активные записи — их надо отменить + уведомить
         res = await s.execute(
-            select(Booking).where(Booking.slot_id == slot_id)
+            select(Booking).where(
+                Booking.slot_id == slot_id,
+                Booking.status == "active",
+            )
         )
-        bookings = res.scalars().all()
+        booking = res.scalar_one_or_none()
+        if booking:
+            result["booking_id"] = booking.id
+            result["user_id"] = booking.user_id
+            booking.status = "cancelled"
 
-        for booking in bookings:
-            # если активная — отменяем
-            if booking.status == "active":
-                result["booking_id"] = booking.id
-                result["user_id"] = booking.user_id
-                booking.status = "cancelled"
-            # 👇 обнуляем ссылку на слот у ВСЕХ записей
-            booking.slot_id = None
-
-        await s.flush()  # фиксируем обнуление
+        # Удаляем слот — Postgres сам поставит slot_id = NULL у записей
+        # благодаря ON DELETE SET NULL
         await s.delete(slot)
         await s.commit()
+
         result["deleted"] = True
         return result
 
