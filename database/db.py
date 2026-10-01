@@ -1,7 +1,6 @@
 import os
 from datetime import datetime, timedelta
-
-from sqlalchemy import func, select
+from sqlalchemy import select, delete, func, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import selectinload
 
@@ -161,26 +160,43 @@ async def delete_slot(slot_id: int, force: bool = False) -> dict:
             "dt": slot.dt,
         }
 
-        # Находим активные записи — их надо отменить + уведомить
+        # 1. Находим ВСЕ записи на этот слот
         res = await s.execute(
-            select(Booking).where(
-                Booking.slot_id == slot_id,
-                Booking.status == "active",
-            )
+            select(Booking).where(Booking.slot_id == slot_id)
         )
-        booking = res.scalar_one_or_none()
-        if booking:
-            result["booking_id"] = booking.id
-            result["user_id"] = booking.user_id
-            booking.status = "cancelled"
+        bookings = res.scalars().all()
 
-        # Удаляем слот — Postgres сам поставит slot_id = NULL у записей
-        # благодаря ON DELETE SET NULL
-        await s.delete(slot)
+        # 2. Обнуляем slot_id у всех записей через raw SQL (в обход ORM)
+        from sqlalchemy import text
+        await s.execute(
+            text("UPDATE bookings SET slot_id = NULL WHERE slot_id = :sid"),
+            {"sid": slot_id}
+        )
+
+        # 3. Запоминаем отменённые записи для уведомления
+        for booking in bookings:
+            if booking.status == "active":
+                result["booking_id"] = booking.id
+                result["user_id"] = booking.user_id
+                result["had_booking"] = True
+
+        # 4. Отменяем активные записи
+        await s.execute(
+            text("UPDATE bookings SET status = 'cancelled' "
+                 "WHERE slot_id IS NULL AND status = 'active' AND id = ANY(:ids)"),
+            {"ids": [b.id for b in bookings if b.status == "active"] or [0]}
+        )
+
+        # 5. Удаляем слот
+        await s.execute(
+            text("DELETE FROM slots WHERE id = :sid"),
+            {"sid": slot_id}
+        )
+
         await s.commit()
-
         result["deleted"] = True
         return result
+            
 
 
 # ================= BOOKINGS =================
