@@ -34,7 +34,18 @@ logging.getLogger("aiogram.event").setLevel(logging.WARNING)
 
 async def main():
     await init_db()
-
+    
+    # 👇 ВРЕМЕННАЯ ПРОВЕРКА
+    from sqlalchemy import text
+    from database.db import async_session
+    async with async_session() as s:
+        res = await s.execute(text(
+            "SELECT column_name, is_nullable, table_schema "
+            "FROM information_schema.columns "
+            "WHERE table_name = 'bookings' AND column_name = 'slot_id'"
+        ))
+        for row in res:
+            print(f"🔍 CHECK: {row}")
     bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher(storage=MemoryStorage())
 
